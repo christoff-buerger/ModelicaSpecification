@@ -255,7 +255,7 @@ However, \lstinline!pre(u)! is legal within the \lstinline!when!-clause, since t
 The start values of the introduced \lstinline!Boolean! variables are defined by the taking the start value of the when-condition, as above where \lstinline!b! is a parameter variable.
 The start value of the special functions \lstinline!initial!, \lstinline!terminal!, and \lstinline!sample! is \lstinline!false!.
 
-\subsubsection{Restrictions on Where a When-Equation may Occur}\label{restrictions-on-where-a-when-equation-may-occur}
+\subsubsection{Where a When-Equation May Occur}\label{restrictions-on-where-a-when-equation-may-occur}\label{where-a-when-equation-may-occur}
 
 \begin{itemize}
 \item
@@ -277,7 +277,7 @@ end when;
 \end{lstlisting}
 \end{example}
 
-\subsubsection{Restrictions on Equations within When-Equations}\label{restrictions-on-equations-within-when-equations}
+\subsubsection{Equations within When-Equations}\label{restrictions-on-equations-within-when-equations}\label{equations-within-when-equations}
 
 The equations within the \lstinline!when!-equation must have one of the following forms:
 \begin{itemize}
@@ -360,7 +360,7 @@ equation
 \end{lstlisting}
 \end{example}
 
-\subsubsection{Application of the Single-assignment Rule to When-Equations}\label{application-of-the-single-assignment-rule-to-when-equations}
+\subsubsection{Single Assignment Rule Applied to When-Equations}\label{application-of-the-single-assignment-rule-to-when-equations}\label{single-assignment-rule-applied-to-when-equations}
 
 The Modelica single-assignment rule (\cref{synchronous-data-flow-principle-and-single-assignment-rule}) has implications for \lstinline!when!-equations:
 \begin{itemize}
@@ -421,7 +421,7 @@ reinit(x, expr);
 The operator reinitializes \lstinline!x! with \lstinline!expr! at an event instant.
 \lstinline!x! is a \lstinline!Real! variable (or an array of \lstinline!Real! variables) that must be selected as a state (resp., states), i.e.\ \lstinline!reinit! on \lstinline!x! implies \lstinline!stateSelect = StateSelect.always! on \lstinline!x!.
 \lstinline!expr! needs to be type-compatible with \lstinline!x!.
-\lstinline!reinit! can for the same variable (resp.\ array of variables) only be applied (either as an individual variable or as part of an array of variables) in one equation (having \lstinline!reinit! of the same variable in \lstinline!when! and \lstinline!elsewhen! of the same variable is allowed).
+For any given variable (possibly an array variable), \lstinline!reinit! can only be applied (either to an individual variable or to a part of an array variable) in one \lstinline!when!-equation (applying \lstinline!reinit! to a variable in several \lstinline!when!- or \lstinline!elsewhen!-clauses of the same \lstinline!when!-equation is allowed).
 In case of \lstinline!reinit! active during initialization (due to \lstinline!when initial()!), see \cref{initialization-initial-equation-and-initial-algorithm}.
 
 \lstinline!reinit! does not break the single assignment rule, because \lstinline!reinit(x, expr)! in equations evaluates \lstinline!expr! to a value,
@@ -493,7 +493,8 @@ The \lstinline!AssertionLevel.warning! case can be used when the boundary of val
 When the temperature gets out of the smaller interval, but still stays in the largest one, the user should be warned, but the simulation should continue without any further action.
 The corresponding code would be:
 \begin{lstlisting}[language=modelica]
-assert(T > 250 and T < 400, "Medium model outside full accuracy range", AssertionLevel.warning);
+assert(T > 250 and T < 400, "Medium model outside full accuracy range",
+       AssertionLevel.warning);
 assert(T > 200 and T < 500, "Medium model outside feasible region");
 \end{lstlisting}
 \end{nonnormative}
@@ -527,7 +528,7 @@ end ThrowingBall;
 
 See \cref{equation-operators-for-overconstrained-connection-based-equation-systems1} for a description of this topic.
 
-\section{Synchronous Data-flow Principle and Single Assignment Rule}\label{synchronous-data-flow-principle-and-single-assignment-rule}
+\section{Synchronous Data-Flow Principle and Single Assignment Rule}\label{synchronous-data-flow-principle-and-single-assignment-rule}
 
 Modelica is based on the synchronous data flow principle and the single assignment rule, which are defined in the following way:
 \begin{enumerate}
@@ -696,6 +697,8 @@ The initialization uses all equations and algorithms that are utilized in the in
 The equations of a \lstinline!when!-clause are active during initialization, if and only if they are explicitly enabled with \lstinline!initial()!, and only in one of the two forms \lstinline!when initial() then! or \lstinline!when {$\ldots$, initial(), $\ldots$} then! (and similarly for \lstinline!elsewhen! and algorithms see below).
 In this case, the \lstinline!when!-clause equations remain active during the whole initialization phase.
 In case of a \lstinline!reinit(x, expr)! being active during initialization (due to being inside \lstinline!when initial()!) this is interpreted as adding \lstinline!x = expr! (the \lstinline!reinit!-equation) as an initial equation.
+The \lstinline!reinit! handling applies both if directly inside \lstinline!when!-clause or inside an \lstinline!if!-equation in the \lstinline!when!-clause.
+In particular, \lstinline!reinit(x, expr)! needs to be counted as the equation \lstinline!x = expr;! for the purpose of balancing of \lstinline!if!-equations inside \lstinline!when!-clauses that are active during initialization, see \cref{if-equations}.
 
 \begin{nonnormative}
 If a \lstinline!when!-clause equation \lstinline!v = expr;! is not active during the initialization phase, the equation \lstinline!v = pre(v)! is added for initialization.
@@ -858,7 +861,41 @@ pre(y) := y;
 \end{lstlisting}
 \end{example}
 
-\subsection{The Number of Equations Needed for Initialization}\label{the-number-of-equations-needed-for-initialization}
+\begin{example}
+Resettable continuous-time controller initialized either in steady-state or by providing a \lstinline!start! value for state \lstinline!y!:
+\begin{lstlisting}[language=modelica]
+  parameter Boolean steadyState = true;
+  parameter Real y0 = 0 "start and reset value for y, if not steadyState";
+  input Boolean reset "For resetting integrator to y0";
+  Real y;
+equation
+  der(y) = a * y + b * u;
+  when {initial(), reset} then
+    if not (initial() and steadyState) then
+      reinit(y, y0);
+    end if;
+  end when;
+initial equation
+  if steadyState then
+    der(y) = 0;
+  end if;
+\end{lstlisting}
+If \lstinline!not steadyState! this will add \lstinline!y = y0! during the initialization; if not the \lstinline!reinit! is ignored during initialization and the initial equation is used.
+This model can be written in various ways, this particular way makes it clear that the reset is equal to the normal initialization.
+
+During initialization this gives the following equations
+\begin{lstlisting}[language=modelica]
+  if not steadyState then
+    y = y0;
+  end if;
+  if steadyState then
+    der(y) = 0;
+  end if;
+\end{lstlisting}
+if \lstinline!steadyState! had not been a parameter-expression both of those equations would have been illegal according to the restrictions in \cref{if-equations}.
+\end{example}
+
+\subsection{Equations Needed for Initialization}\label{the-number-of-equations-needed-for-initialization}\label{equations-needed-for-initialization}
 
 \begin{nonnormative}
 In general, for the case of a pure (first order) ordinary differential equation (ODE) system with $n$ state variables and $m$ output variables, we will have $n+m$ unknowns in the simulation problem.
@@ -883,7 +920,7 @@ The reason is that in a higher index DAE problem the number of dynamic continuou
 As noted in \cref{initialization-initial-equation-and-initial-algorithm} a tool may add/remove initial equations to fulfill this requirement, if appropriate diagnostics are given.
 \end{example}
 
-\subsection{Recommended selection of start values}\label{recommended-selection-of-start-values}
+\subsection{Start Value Recommended Priority}\label{recommended-selection-of-start-values}\label{start-value-recommended-priority}
 
 In general many variables have \lstinline!start!-attributes that are not fixed and selecting a subset of these can give a consistent set of start values close to the user-expectations.
 The following gives a non-normative procedure for finding such a subset.
@@ -896,4 +933,51 @@ The level number increases by 1 for each level down in the model component hiera
 The model component hierarchy level number is used to give \lstinline!start!-attribute a confidence number, where a lower number means that the \lstinline!start!-attribute is more confident.
 Loosely, if the \lstinline!start!-attribute is set or modified on level $i$ then the confidence number is $i$.
 If a \lstinline!start!-attribute is set by a possibly hierarchical modifier at the top level, then this \lstinline!start!-attribute has the highest confidence, namely 1 irrespectively on what level, the variable itself is declared.
+If the \lstinline!start!-attribute is set equal to a parameter, which may be equal to another parameter (etc), the lowest confidence number of these bindings are used.
+(In almost all cases that is the confidence number of the last parameter binding in the chain.)
+Note that this is only applied if the expression is exactly the parameter -- not an expression depending on one or more parameters.
+In case the confidence number considering parameter bindings is tied the confidence number of the \lstinline!start!-attribute is used to break the tie, if unequal.
+\begin{example}
+Simplified examples showing the priority of start-values.
+The example \lstinline!M3! shows that it is important that parameter-confidence is used directly and not only when the other priority is tied.
+\begin{lstlisting}[language=modelica]
+model M1
+  Real x(start = 4.0);
+  Real y(start = 5.0);
+equation
+  x = y;
+end M1;
+model M2
+  parameter Real xStart = 4.0;
+  parameter Real yStart = 5.0;
+  Real x(start = xStart);
+  Real y(start = yStart);
+equation
+  x = y;
+end M2;
+model M3
+  model MLocal
+    parameter Real xStart = 4.0;
+    Real x(start = xStart);
+  end MLocal;
+  model MLocalWrapped
+    parameter Real xStart = 4.0;
+    MLocal m(xStart = xStart);
+  end MLocalWrapped;
+  MLocal mx;
+  MLocalWrapped my(xStart = 3.0);
+equation
+  mx.x = my.y;
+end M3;
+M1 m1(x(start = 3.0));
+// Using m1.x.start = 3.0 with confidence number 1
+// over m1.y.start = 5.0 with confidence number 2
+M2 m2(xStart = 3.0);
+// Using m2.x.start = m2.xStart = 3.0 with confidence number 1
+// over m2.y.start = m2.yStart = 5.0 with confidence number 2
+M3 m3;
+// Using m3.my.x = m3.my.xStart = 3.0 with confidence number 1
+// over m3.mx.x = m3.mx.xStart = 4.0 with confidence number 2
+\end{lstlisting}
+\end{example}
 \end{nonnormative}
